@@ -1,0 +1,72 @@
+# Docker
+# Build and push an image to Azure Container Registry
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+trigger:
+- staging
+
+resources:
+- repo: self
+
+variables:
+  # Container registry service connection established during pipeline creation
+  dockerRegistryServiceConnection: 'f20d9158-251e-41d5-9941-e078e046faa1'
+  imageRepository: 'concastyaml'
+  containerRegistry: 'concastcontainertakeoffstagingcanadacentral002.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+  # Agent VM image name
+  vmImageName: 'ubuntu-latest'
+
+stages:
+- stage: Build
+  displayName: Build and push stage
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(vmImageName)
+      steps:
+      - task: Npm@1
+      displayName: 'npm install'
+      inputs:
+       verbose: false
+    steps:
+       - task: ArchiveFiles@2
+         displayName: 'Archive files'
+         inputs:
+          rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+          includeRootFolder: false
+       - task: Docker@2
+         inputs:
+           containerRegistry: 'ConcastContainerTakeoffStagingCanadaCentral002'
+           repository: 'concast-takeoff-staging-YAML'
+           command: 'buildAndPush'
+           Dockerfile: '**/Dockerfile'
+           tags: |
+             $(Build.BuildId)
+             latest
+       - task: PublishBuildArtifacts@1
+         inputs:
+           PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+           ArtifactName: 'drop'
+           publishLocation: 'Container'
+- stage: 'Deploy_STAGING'
+  displayName: 'Deploy dev'
+  dependsOn: Build
+  jobs:
+  - deployment: 'Dev_Deploy_WebApp'
+    displayName: 'Deploy STAGING'
+    pool:
+      vmImage: $(vmImageName)
+    environment: 'STAGING'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebAppContainer@1
+            inputs:
+             azureSubscription: 'CSP (eb89b7d5-5ff2-4a5c-b9af-e18742b65181)'
+             appName: 'webapp-takeoff-staging-canada-central-002'
+             containers: 'docker pull concastcontainertakeoffstagingcanadacentral002.azurecr.io/concast-takeoff-staging:latest'
